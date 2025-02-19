@@ -6,3 +6,7 @@ uvicorn[standard]==0.22.0
 python-multipart
 pydantic~=2.10.3
 httpx~=0.28.0
+aiosqlite~=0.17.0
+itsdangerous~=2.1.2
+psycopg2-binary>=2.9.10
+authlib~=0.15.4
