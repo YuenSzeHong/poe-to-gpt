@@ -13,6 +13,7 @@ proxy = ""
 
 timeout = 120  # 设置超时时间
 
+
 # LinuxDO OAuth Configuration
 base_url = "https://localhost:3700"  # Your application's base URL
 db_url = ""  # SQLite database path
@@ -22,6 +23,7 @@ LINUXDO_MIN_LEVEL=
 
 # Session configuration
 session_secret = ""  # Replace with a secure random string
+
 
 bot_names = [
     "Assistant", 

@@ -44,6 +44,7 @@ def generate_api_key():
 # Get trust level minimum from config - None means no requirement
 LINUXDO_MIN_LEVEL = config.get("LINUXDO_MIN_LEVEL", None)
 
+
 # OAuth routes
 @router.get('/auth/linuxdo')
 async def auth_linuxdo(request: Request, self: str = None):
@@ -75,6 +76,7 @@ async def authorize(request: Request):
             raise HTTPException(status_code=400, detail="未收到访问令牌")
 
         # Get initial user info
+
         user_info = await verify_linuxdo_token(access_token)
         if not user_info:
             raise HTTPException(status_code=401, detail="访问令牌验证失败")
@@ -82,6 +84,7 @@ async def authorize(request: Request):
         # Extract relevant user information
         username = user_info.get('username')
         user_id = user_info.get('id')
+
         
         # Check if user exists
         user = get_user(user_id=user_id)
@@ -116,6 +119,7 @@ async def authorize(request: Request):
             # Update existing user's token
             update_linuxdo_token(user[0], access_token)
             api_key = user[1]
+
 
         # Handle disabled users as normal flow
         if not user[4]:  # user[4] is enabled status
