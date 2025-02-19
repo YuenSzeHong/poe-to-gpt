@@ -41,6 +41,9 @@ logger = logging.getLogger(__name__)
 def generate_api_key():
     return f"sk-yn-{uuid.uuid4()}"
 
+# Get trust level minimum from config - None means no requirement
+LINUXDO_MIN_LEVEL = config.get("LINUXDO_MIN_LEVEL", None)
+
 # OAuth routes
 @router.get('/auth/linuxdo')
 async def auth_linuxdo(request: Request, self: str = None):
@@ -71,7 +74,7 @@ async def authorize(request: Request):
         if not access_token:
             raise HTTPException(status_code=400, detail="未收到访问令牌")
 
-        # Verify token and get user info in one call
+        # Get initial user info
         user_info = await verify_linuxdo_token(access_token)
         if not user_info:
             raise HTTPException(status_code=401, detail="访问令牌验证失败")
@@ -79,20 +82,40 @@ async def authorize(request: Request):
         # Extract relevant user information
         username = user_info.get('username')
         user_id = user_info.get('id')
-
-        logger.info(f"Received user info: {user_info}")
-  
+        
+        # Check if user exists
         user = get_user(user_id=user_id)
 
         if not user:
-            # Create a new user with api_key and other fields
+            # Only check trust level for new users
+            if LINUXDO_MIN_LEVEL is not None:
+                trust_level = user_info.get('trust_level', 0)
+                if trust_level < LINUXDO_MIN_LEVEL:
+                    error_message = f"新用户需要LinuxDO信任等级≥{LINUXDO_MIN_LEVEL}"
+                    return HTMLResponse(f"""
+                        <!DOCTYPE html>
+                        <html>
+                        <head>
+                            <title>登录失败</title>
+                            <script>
+                                if (window.opener) {{
+                                    window.opener.postMessage({{"error": "{error_message}"}}, window.location.origin);
+                                }}
+                                window.close();
+                            </script>
+                        </head>
+                        <body></body>
+                        </html>
+                    """)
+            
+            # Create new user if trust level check passes
             api_key = generate_api_key()
             create_user(api_key=api_key, username=username, linuxdo_token=access_token)
-            user = get_user(api_key=api_key)  # Get the newly created user
+            user = get_user(api_key=api_key)
         else:
-            # Update the user's linuxdo_token and get their api_key
-            update_linuxdo_token(user[0], access_token)  # user[0] is user_id
-            api_key = user[1]  # user[1] is api_key
+            # Update existing user's token
+            update_linuxdo_token(user[0], access_token)
+            api_key = user[1]
 
         # Handle disabled users as normal flow
         if not user[4]:  # user[4] is enabled status
