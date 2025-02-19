@@ -2,7 +2,7 @@ version: '3'
 
 services:
   poe-to-gpt:
-    image: ghcr.io/YuenSzeHong/poe-to-gpt:lastest
+    image: ghcr.io/yuenszehong/poe-to-gpt
     ports:
       - "3700:3700"
     volumes:

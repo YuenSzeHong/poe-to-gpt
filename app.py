@@ -484,4 +484,4 @@ app.include_router(admin_router)
 
 if __name__ == "__main__":
     # Start the application
-    uvicorn.run(app, port=config.get("port", 5100))
+    uvicorn.run(app, host='0.0.0.0', port=config.get("port", 5100))
