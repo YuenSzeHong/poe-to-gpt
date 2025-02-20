@@ -15,8 +15,8 @@ router = APIRouter()
 
 # LinuxDO OAuth Configuration
 base_url = config.get("base_url", "http://localhost:3700")  # Your application's base URL
-LINUXDO_CLIENT_KEY = config.get("LINUXDO_CLIENT_KEY")
-LINUXDO_CLIENT_SECRET = config.get("LINUXDO_CLIENT_SECRET")
+LINUXDO_CLIENT_KEY = config.get("linuxdo").get("client_key")
+LINUXDO_CLIENT_SECRET = config.get("linuxdo").get("client_secret")
 
 # Setup OAuth
 # config = Config({'LINUXDO_CLIENT_ID': LINUXDO_CLIENT_KEY, 'LINUXDO_CLIENT_SECRET': LINUXDO_CLIENT_SECRET})
@@ -42,7 +42,7 @@ def generate_api_key():
     return f"sk-yn-{uuid.uuid4()}"
 
 # Get trust level minimum from config - None means no requirement
-LINUXDO_MIN_LEVEL = config.get("LINUXDO_MIN_LEVEL", None)
+LINUXDO_MIN_LEVEL = config.get("linuxdo").get("min_level", None)
 
 
 # OAuth routes
@@ -80,6 +80,8 @@ async def authorize(request: Request):
         user_info = await verify_linuxdo_token(access_token)
         if not user_info:
             raise HTTPException(status_code=401, detail="访问令牌验证失败")
+        
+        logger.info(f"User info: {user_info}")
 
         # Extract relevant user information
         username = user_info.get('username')

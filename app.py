@@ -38,17 +38,24 @@ class AppState:
     async def cleanup(self):
         """Clean up resources"""
         try:
-            if self.proxy:
-                await self.proxy.aclose()
-                self.proxy = None
+            # Close all client sessions
+            for client in self.client_dict.values():
+                if hasattr(client, 'aclose'):
+                    await client.aclose()
             
-            # Clear the client dictionary
+            # Close proxy client
+            if self.proxy and not self.proxy.is_closed:
+                await self.proxy.aclose()
+            
+            # Clear data structures
             self.client_dict.clear()
+            self.proxy = None
             self.api_key_cycle = None
             
             logger.info("Successfully cleaned up AppState resources")
         except Exception as e:
             logger.error(f"Error during AppState cleanup: {e}")
+            raise
 
 # Global variables
 @asynccontextmanager
@@ -98,15 +105,23 @@ async def lifespan(app: FastAPI):
 
         yield  # Application runs here
 
+    except Exception as e:
+        logger.error(f"Error during startup: {e}")
+        raise
     finally:
+        # Ensure cleanup happens even if there's an error
         try:
-            await app.state.cleanup()
+            if hasattr(app.state, 'cleanup'):
+                await app.state.cleanup()
             close_db()
             logger.info("Successfully completed shutdown process")
         except Exception as e:
-            logger.error(f"Error during shutdown: {e}")
-            # Even if there's an error, we want to ensure db connection is closed
-            close_db()
+            logger.error(f"Error during shutdown cleanup: {e}")
+            # Make sure db connection is closed even if other cleanup fails
+            try:
+                close_db()
+            except Exception as db_error:
+                logger.error(f"Error closing database connection: {db_error}")
 
 # Update FastAPI instance to use lifespan
 app = FastAPI(lifespan=lifespan)
