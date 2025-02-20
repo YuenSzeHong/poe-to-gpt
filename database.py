@@ -125,11 +125,11 @@ def get_user(cur, user_id: Optional[int] = None, api_key: Optional[str] = None):
     return cur.fetchone()
 
 @db_transaction
-def create_user(cur, api_key: str, username: str, linuxdo_token: str):
+def create_user(cur, user_id, api_key: str, username: str, linuxdo_token: str):
     """Create a new user in the database."""
-    sql = '''INSERT INTO users(api_key, username, linuxdo_token, created_at)
-             VALUES(%s, %s, %s, CURRENT_TIMESTAMP)'''
-    cur.execute(sql, (api_key, username, linuxdo_token))
+    sql = '''INSERT INTO users(user_id, api_key, username, linuxdo_token, created_at)
+             VALUES(%s, %s, %s, %s, CURRENT_TIMESTAMP)'''
+    cur.execute(sql, (user_id, api_key, username, linuxdo_token))
     return cur.lastrowid
 
 @db_transaction

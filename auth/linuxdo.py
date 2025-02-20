@@ -115,7 +115,7 @@ async def authorize(request: Request):
             
             # Create new user if trust level check passes
             api_key = generate_api_key()
-            create_user(api_key=api_key, username=username, linuxdo_token=access_token)
+            create_user(user_id=user_id, api_key=api_key, username=username, linuxdo_token=access_token)
             user = get_user(api_key=api_key)
         else:
             # Update existing user's token
