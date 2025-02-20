@@ -28,8 +28,10 @@ def init_db():
         
         # Create connection pool
         _pool = pool.SimpleConnectionPool(
-            minconn=config.get('db_minconn', 1),  # Adjust based on your needs
-            maxconn=config.get('db_bmaxconn',20),  # Adjust based on your needs
+            # Adjust based on your needs
+            minconn=config.get('pool_minconn', 1),
+            # Adjust based on your needs
+            maxconn=config.get('pool_maxconn', 20),
             database=result.path[1:],
             user=result.username,
             password=result.password,
@@ -59,31 +61,70 @@ def close_db():
         logger.info("Database connection pool closed")
 
 def get_db():
-    """Get a connection from the pool."""
-    if _pool:
-        return _pool.getconn()
-    raise Exception("Database pool not initialized")
+    """Get a connection from the pool with proper error handling."""
+    if not _pool:
+        logger.error("Database pool not initialized")
+        raise Exception("Database pool not initialized")
+
+    try:
+        conn = _pool.getconn()
+        logger.debug("Acquired connection from pool")
+        return conn
+    except Exception as e:
+        logger.error(f"Failed to get connection from pool: {e}")
+        raise
 
 def put_db(conn):
-    """Return a connection to the pool."""
+    """Return a connection to the pool with proper error handling."""
     if _pool and conn:
-        _pool.putconn(conn)
+        try:
+            _pool.putconn(conn)
+            logger.debug("Released connection back to pool")
+        except Exception as e:
+            logger.error(f"Failed to return connection to pool: {e}")
+            # Try to close connection if we can't return it
+            try:
+                conn.close()
+                logger.debug(
+                    "Closed connection that couldn't be returned to pool")
+            except Exception as close_error:
+                logger.error(f"Failed to close connection: {close_error}")
 
 def db_transaction(func):
-    """Decorator for database operations."""
+    """
+    Decorator to ensure proper database connection handling.
+    Each operation will:
+    1. Get a fresh connection from the pool
+    2. Execute the operation
+    3. Commit/rollback the transaction
+    4. Return the connection to the pool
+    """
     def wrapper(*args, **kwargs):
         conn = None
         try:
+            # Get fresh connection from pool
             conn = get_db()
+            if not conn:
+                raise Exception("Failed to get database connection")
+
+            # Execute operation in a transaction
             with conn:  # Handles commit/rollback
                 with conn.cursor() as cur:
                     return func(cur, *args, **kwargs)
+
         except Exception as e:
             logger.error(f"Database error in {func.__name__}: {e}")
             raise
+
         finally:
+            # Always return connection to pool
             if conn:
-                put_db(conn)
+                try:
+                    put_db(conn)
+                except Exception as e:
+                    logger.error(
+                        f"Error returning connection to pool in {func.__name__}: {e}")
+
     return wrapper
 
 # Make these functions available for import
