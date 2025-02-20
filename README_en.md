@@ -1,5 +1,19 @@
 ## poe-to-gpt
-A converter that transforms POE's API token into OpenAI's API format, enabling other applications that depend on OpenAI API to use POE's API.
+A converter that transforms POE's API tokens into OpenAI API format, enabling other applications that depend on OpenAI API to use POE's API.
+
+### Features
+- LinuxDO OAuth authentication
+- Multi-user management
+- Custom API access tokens
+- User status management
+- Admin panel
+- Database connection pooling
+- Docker support
+
+### Prerequisites
+- PostgreSQL database
+- LinuxDO OAuth credentials
+- POE subscriber API key
 
 This tool converts API keys provided by the Poe official website into compatible OpenAI API keys. It allows Poe API keys to be used with tools that rely on OpenAI API keys. The main reason for developing this tool is to provide convenience and stability for users in mainland China, who find it inconvenient to subscribe to and recharge OpenAI API.
 
@@ -11,30 +25,26 @@ Poe subscribers can get their API key at: [https://poe.com/api_key](https://poe.
 
 [中文文档](https://github.com/formzs/poe-to-gpt/blob/main/README.md)
 
-#### Installation
+### Installation
 
-Clone this repository to your local machine:
-
+1. Clone repository:
 ```
 git clone https://github.com/formzs/poe-to-gpt.git
 cd poe-to-gpt/
 ```
 
-Install dependencies from requirements.txt:
-
+2. Install dependencies from requirements.txt:
 ```
 pip install -r requirements.txt
 ```
 
-Create a configuration file in the project's root directory. Instructions are in the comments:
-
+3. Create a configuration file in the project's root directory. Instructions are in the comments:
 ```
 cp config.example.toml config.toml
 vim config.toml
 ```
 
-Start the project:
-
+4. Start the project:
 ```
 # Runs on port 3700 by default
 python app.py

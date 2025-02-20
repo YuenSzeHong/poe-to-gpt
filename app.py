@@ -31,9 +31,9 @@ class AppState:
         self.proxy = None
         self.client_dict = {}
         self.api_key_cycle = None
-        self.bot_names = config.get("bot_names", [])
+        self.bot_names = config.get("models", {}).get("available", [])
         self.bot_names_map = {name.lower(): name for name in self.bot_names}
-        self.access_tokens = set(config.get("accessTokens", []))
+        self.access_tokens = set(config.get("api", {}).get("access_tokens", []))
 
     async def cleanup(self):
         """Clean up resources"""
@@ -56,17 +56,27 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events"""
     # Startup
     try:
-        # Initialize database
-        if init_db() is None:
-            logger.error("Failed to connect to database during startup")
+        # Initialize database with retries
+        max_retries = 3
+        retry_count = 0
+        while retry_count < max_retries:
+            if init_db() is not None:
+                break
+            retry_count += 1
+            logger.warning(f"Database connection attempt {retry_count} failed, retrying...")
+            await asyncio.sleep(5)  # Wait 5 seconds before retrying
+            
+        if retry_count >= max_retries:
+            logger.error("Failed to connect to database after maximum retries")
             sys.exit(1)
 
         # Initialize proxy
         timeout = config.get("timeout", 120)
-        app.state.proxy = AsyncClient(timeout=timeout) if not config.get("proxy") else AsyncClient(proxy=config.get("proxy"), timeout=timeout)
+        proxy_url = config.get("api", {}).get("proxy")
+        app.state.proxy = AsyncClient(timeout=timeout) if not proxy_url else AsyncClient(proxy=proxy_url, timeout=timeout)
 
         # Initialize POE tokens
-        tokens = config.get("apikey", [])
+        tokens = config.get("api", {}).get("poe_keys", [])
         if not tokens:
             logger.warning("No POE API tokens configured")
         else:

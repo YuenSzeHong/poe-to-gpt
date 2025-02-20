@@ -3,38 +3,40 @@
 
 这是一个工具，将 Poe官方网站提供的 API 密钥转换为兼容的 OpenAI API 密钥。它使 Poe API 密钥可以与依赖于 OpenAI API 密钥的工具一起使用。开发此工具的主要原因是为中国大陆用户提供便利和稳定性，因为他们发现订阅和充值 OpenAI API 不太方便。
 
-请注意，目前**仅限 Poe 订阅者访问 API 密钥**。
+### 特点
+- 支持 LinuxDO OAuth 登录认证
+- 支持多用户管理和权限控制
+- 支持自定义 API 访问令牌
+- 支持用户状态管理（启用/禁用）
+- 管理员面板用于用户管理
+- 连接池优化的数据库处理
+- Docker 支持
 
-poe 订阅者获取API key地址：[https://poe.com/api_key](https://poe.com/api_key)
+### 先决条件
+- PostgreSQL 数据库
+- LinuxDO OAuth 应用程序凭据
+- POE 订阅者 API 密钥
 
-**新版本简化了程序和部署方式。**
+### 安装
 
-[English Document](https://github.com/formzs/poe-to-gpt/blob/main/README_en.md)
-
-#### 安装
-
-将此存储库克隆到本地机器：
-
+1. 克隆仓库：
 ```
 git clone https://github.com/formzs/poe-to-gpt.git
 cd poe-to-gpt/
 ```
 
-从 requirements.txt 安装依赖项：
-
+2. 从 requirements.txt 安装依赖项：
 ```
 pip install -r requirements.txt
 ```
 
-在项目的根目录中创建配置文件。指令已写在注释中：
-
+3. 在项目的根目录中创建配置文件。指令已写在注释中：
 ```
 cp config.example.toml config.toml
 vim config.toml
 ```
 
-启动项目：
-
+4. 启动项目：
 ```
 # 默认运行在端口 3700
 python app.py

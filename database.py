@@ -1,86 +1,98 @@
 import logging
-import uuid
 from typing import Optional
-import psycopg2  # Import psycopg2
+import uuid
+import psycopg2
+from psycopg2 import pool
 from urllib.parse import urlparse
 from config import config
 
-
-
 # Database Configuration
-db_url = config.get("db_url", "postgresql://user:password@host/database")  # PostgreSQL database URL
+db_url = config.get("db_url", "")  # PostgreSQL database URL
+
+if not db_url:
+    raise ValueError("Please set the db_url in config.toml")
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Global database connection
-_db = None
-
-def get_db():
-    """Get the global database connection."""
-    return _db
+# Global connection pool
+_pool = None
 
 def init_db():
-    """Initialize the global database connection."""
-    global _db
-    _db = create_connection()
-    if (_db):
-        create_table()  # No need to pass _db
-    return _db
+    """Initialize the database connection pool."""
+    global _pool
+    try:
+        # Parse the database URL
+        result = urlparse(db_url)
+        
+        # Create connection pool
+        _pool = pool.SimpleConnectionPool(
+            minconn=config.get('db_minconn', 1),  # Adjust based on your needs
+            maxconn=config.get('db_bmaxconn',20),  # Adjust based on your needs
+            database=result.path[1:],
+            user=result.username,
+            password=result.password,
+            host=result.hostname,
+            sslmode='require' if result.query == 'sslmode=require' else 'disable'
+        )
+        
+        # Test the connection
+        with _pool.getconn() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute('SELECT 1')
+            _pool.putconn(conn)
+            
+        logger.info("Successfully initialized database connection pool")
+        create_table()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to initialize database pool: {e}")
+        return False
 
 def close_db():
-    """Close the global database connection."""
-    global _db
-    if (_db):
-        _db.close()
-        _db = None
+    """Close the connection pool."""
+    global _pool
+    if _pool:
+        _pool.closeall()
+        _pool = None
+        logger.info("Database connection pool closed")
+
+def get_db():
+    """Get a connection from the pool."""
+    if _pool:
+        return _pool.getconn()
+    raise Exception("Database pool not initialized")
+
+def put_db(conn):
+    """Return a connection to the pool."""
+    if _pool and conn:
+        _pool.putconn(conn)
+
+def db_transaction(func):
+    """Decorator for database operations."""
+    def wrapper(*args, **kwargs):
+        conn = None
+        try:
+            conn = get_db()
+            with conn:  # Handles commit/rollback
+                with conn.cursor() as cur:
+                    return func(cur, *args, **kwargs)
+        except Exception as e:
+            logger.error(f"Database error in {func.__name__}: {e}")
+            raise
+        finally:
+            if conn:
+                put_db(conn)
+    return wrapper
 
 # Make these functions available for import
 __all__ = ['init_db', 'get_db', 'close_db', 'get_user', 'create_user', 
            'is_admin', 'reset_api_key', 'get_all_users', 
            'disable_user', 'enable_user', 'update_linuxdo_token']
 
-def create_connection():
-    """Create a database connection to a PostgreSQL database."""
-    conn = None
-    try:
-        # Parse the database URL
-        result = urlparse(db_url)
-        username = result.username
-        password = result.password
-        database = result.path[1:]
-        hostname = result.hostname
-        sslmode = 'require' if result.query == 'sslmode=require' else 'disable'
-
-        # Log connection parameters (excluding password)
-        logger.info(f"Connecting to PostgreSQL database: host={hostname}, database={database}, user={username}, sslmode={sslmode}")
-
-        conn = psycopg2.connect(
-            database=database,
-            user=username,
-            password=password,
-            host=hostname,
-            sslmode=sslmode
-        )
-
-        # Check if the connection is valid
-        if conn.status == psycopg2.extensions.STATUS_READY:
-            logger.info(f"Successfully connected to PostgreSQL database: {db_url}")
-            return conn
-        else:
-            logger.error("Failed to establish a valid connection to PostgreSQL.")
-            return None
-
-    except psycopg2.Error as e:
-        logger.error(f"psycopg2 Error connecting to PostgreSQL database: {e}")
-        return None
-    except Exception as e:
-        logger.error(f"General error connecting to PostgreSQL database: {e}")
-        return None
-    return conn
-
-def create_table():
+@db_transaction
+def create_table(cur):
     """Create a table in the PostgreSQL database."""
     try:
         sql_create_users_table = """
@@ -96,98 +108,77 @@ def create_table():
             is_admin BOOLEAN DEFAULT FALSE
         );
         """
-        cursor = _db.cursor()  # Use global connection
-        cursor.execute(sql_create_users_table)
-        _db.commit()
+        cur.execute(sql_create_users_table)
         logger.info("Users table created successfully")
     except psycopg2.Error as e:
         logger.error(f"Error creating table: {e}")
 
-def get_user(user_id: Optional[int] = None, api_key: Optional[str] = None):
+@db_transaction
+def get_user(cur, user_id: Optional[int] = None, api_key: Optional[str] = None):
     """Get a user from the database by user_id or api_key."""
-    try:
-        cursor = _db.cursor()  # Use global connection
-        if user_id:
-            try:
-                user_id_int = int(user_id)
-                cursor.execute("SELECT * FROM users WHERE user_id=%s", (user_id_int,))
-            except ValueError:
-                logger.error(f"Invalid user_id format: {user_id}")
-                return None
-        elif api_key:
-            cursor.execute("SELECT * FROM users WHERE api_key=%s", (api_key,))
-        else:
-            return None  # No identifier provided
-        user = cursor.fetchone()
-        return user
-    except psycopg2.Error as e:
-        logger.error(f"Error getting user: {e}")
+    if user_id:
+        cur.execute("SELECT * FROM users WHERE user_id=%s", (user_id,))
+    elif api_key:
+        cur.execute("SELECT * FROM users WHERE api_key=%s", (api_key,))
+    else:
         return None
+    return cur.fetchone()
 
-def create_user(api_key: str, username: str, linuxdo_token: str):
+@db_transaction
+def create_user(cur, api_key: str, username: str, linuxdo_token: str):
     """Create a new user in the database."""
-    try:
-        sql = ''' INSERT INTO users(api_key, username, linuxdo_token, created_at)
-                  VALUES(%s, %s, %s, CURRENT_TIMESTAMP) '''
-        cursor = _db.cursor()  # Use global connection
-        cursor.execute(sql, (api_key, username, linuxdo_token))
-        _db.commit()
-        logger.info(f"User created successfully: {username}")
-        return cursor.lastrowid
-    except psycopg2.Error as e:
-        logger.error(f"Error creating user: {e}")
-        return None
+    sql = '''INSERT INTO users(api_key, username, linuxdo_token, created_at)
+             VALUES(%s, %s, %s, CURRENT_TIMESTAMP)'''
+    cur.execute(sql, (api_key, username, linuxdo_token))
+    return cur.lastrowid
 
-def reset_api_key(user_id: int) -> Optional[str]:
+@db_transaction
+def reset_api_key(cur, user_id: int) -> Optional[str]:
     """Reset a user's API key."""
     try:
         new_api_key = f"sk-yn-{uuid.uuid4()}"
-        cursor = _db.cursor()
-        cursor.execute("UPDATE users SET api_key=%s WHERE user_id=%s", (new_api_key, int(user_id)),)
-        _db.commit()
+        cur.execute("UPDATE users SET api_key=%s WHERE user_id=%s", (new_api_key, int(user_id)),)
         return new_api_key
     except psycopg2.Error as e:
         logger.error(f"Error resetting API key: {e}")
         return None
 
-def get_all_users():
+@db_transaction
+def get_all_users(cur):
     """Get all users from database."""
     try:
-        cursor = _db.cursor()
-        cursor.execute("SELECT * FROM users ORDER BY created_at DESC")
-        return cursor.fetchall()
+        cur.execute("SELECT * FROM users ORDER BY created_at DESC")
+        return cur.fetchall()
     except psycopg2.Error as e:
         logger.error(f"Error getting users: {e}")
         return []
 
-def disable_user(user_id: int, reason: str) -> bool:
+@db_transaction
+def disable_user(cur, user_id: int, reason: str) -> bool:
     """Disable a user's access."""
     try:
-        cursor = _db.cursor()
-        cursor.execute("UPDATE users SET enabled=FALSE, disable_reason=%s WHERE user_id=%s", (reason, int(user_id)),)
-        _db.commit()
+        cur.execute("UPDATE users SET enabled=FALSE, disable_reason=%s WHERE user_id=%s", (reason, int(user_id)),)
         return True
     except psycopg2.Error as e:
         logger.error(f"Error disabling user: {e}")
         return False
 
-def enable_user(user_id: int) -> bool:
+@db_transaction
+def enable_user(cur, user_id: int) -> bool:
     """Re-enable a user's access."""
     try:
-        cursor = _db.cursor()
-        cursor.execute("UPDATE users SET enabled=TRUE, disable_reason=NULL WHERE user_id=%s", (int(user_id),))
-        _db.commit()
+        cur.execute("UPDATE users SET enabled=TRUE, disable_reason=NULL WHERE user_id=%s", (int(user_id),))
         return True
     except psycopg2.Error as e:
         logger.error(f"Error enabling user: {e}")
         return False
 
-def is_admin(api_key: str) -> bool:
+@db_transaction
+def is_admin(cur, api_key: str) -> bool:
     """Check if a user is an admin."""
     try:
-        cursor = _db.cursor()
-        cursor.execute("SELECT is_admin FROM users WHERE api_key=%s", (api_key,))
-        user = cursor.fetchone()
+        cur.execute("SELECT is_admin FROM users WHERE api_key=%s", (api_key,))
+        user = cur.fetchone()
         if user:
             # Return the boolean value directly from the database
             return bool(user[0])
@@ -196,12 +187,12 @@ def is_admin(api_key: str) -> bool:
         logger.error(f"Error checking admin status: {e}")
         return False
 
-def is_admin(oauth_token: str) -> bool:
+@db_transaction
+def is_admin(cur, oauth_token: str) -> bool:
     """Check if a user is an admin by their OAuth token."""
     try:
-        cursor = _db.cursor()
-        cursor.execute("SELECT is_admin FROM users WHERE linuxdo_token = %s", (oauth_token,))
-        user = cursor.fetchone()
+        cur.execute("SELECT is_admin FROM users WHERE linuxdo_token = %s", (oauth_token,))
+        user = cur.fetchone()
         if user:
             return bool(user[0])
         return False
@@ -209,12 +200,12 @@ def is_admin(oauth_token: str) -> bool:
         logger.error(f"Error checking admin status: {e}")
         return False
 
-def get_linuxdo_token(api_key: str) -> Optional[str]:
+@db_transaction
+def get_linuxdo_token(cur, api_key: str) -> Optional[str]:
     """Get the linuxdo_token for a user."""
     try:
-        cursor = _db.cursor()
-        cursor.execute("SELECT linuxdo_token FROM users WHERE api_key=%s", (api_key,))
-        user = cursor.fetchone()
+        cur.execute("SELECT linuxdo_token FROM users WHERE api_key=%s", (api_key,))
+        user = cur.fetchone()
         if user:
             return user[0]
         return None
@@ -222,12 +213,11 @@ def get_linuxdo_token(api_key: str) -> Optional[str]:
         logger.error(f"Error getting linuxdo_token: {e}")
         return None
 
-def update_linuxdo_token(user_id: int, linuxdo_token: str) -> bool:
+@db_transaction
+def update_linuxdo_token(cur, user_id: int, linuxdo_token: str) -> bool:
     """Update a user's LinuxDO token."""
     try:
-        cursor = _db.cursor()
-        cursor.execute("UPDATE users SET linuxdo_token=%s WHERE user_id=%s", (linuxdo_token, int(user_id)))
-        _db.commit()
+        cur.execute("UPDATE users SET linuxdo_token=%s WHERE user_id=%s", (linuxdo_token, int(user_id)))
         logger.info(f"User linuxdo_token updated successfully: {user_id}")
         return True
     except psycopg2.Error as e:
