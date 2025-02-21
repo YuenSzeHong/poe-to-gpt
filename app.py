@@ -38,24 +38,30 @@ class AppState:
     async def cleanup(self):
         """Clean up resources"""
         try:
-            # Close all client sessions
-            for client in self.client_dict.values():
-                if hasattr(client, 'aclose'):
-                    await client.aclose()
+            # Clean up client sessions
+            for token, client in list(self.client_dict.items()):
+                try:
+                    if hasattr(client, 'aclose'):
+                        await client.aclose()
+                except Exception as e:
+                    logger.error(f"Error closing client for token {token[:6]}: {e}")
+                finally:
+                    self.client_dict.pop(token, None)
             
-            # Close proxy client
-            if self.proxy and not self.proxy.is_closed:
-                await self.proxy.aclose()
+            # Clean up proxy client
+            if self.proxy:
+                try:
+                    if not getattr(self.proxy, 'is_closed', True):
+                        await self.proxy.aclose()
+                except Exception as e:
+                    logger.error(f"Error closing proxy client: {e}")
+                finally:
+                    self.proxy = None
             
-            # Clear data structures
-            self.client_dict.clear()
-            self.proxy = None
+            # Clear remaining data structures
             self.api_key_cycle = None
-            
-            logger.info("Successfully cleaned up AppState resources")
         except Exception as e:
             logger.error(f"Error during AppState cleanup: {e}")
-            raise
 
 # Global variables
 @asynccontextmanager
@@ -109,19 +115,25 @@ async def lifespan(app: FastAPI):
         logger.error(f"Error during startup: {e}")
         raise
     finally:
-        # Ensure cleanup happens even if there's an error
-        try:
-            if hasattr(app.state, 'cleanup'):
-                await app.state.cleanup()
-            close_db()
-            logger.info("Successfully completed shutdown process")
-        except Exception as e:
-            logger.error(f"Error during shutdown cleanup: {e}")
-            # Make sure db connection is closed even if other cleanup fails
+        # Shutdown
+        shutdown_tasks = []
+        
+        # Add AppState cleanup task
+        if hasattr(app.state, 'cleanup'):
+            shutdown_tasks.append(app.state.cleanup())
+        
+        # Execute all shutdown tasks
+        if shutdown_tasks:
             try:
-                close_db()
-            except Exception as db_error:
-                logger.error(f"Error closing database connection: {db_error}")
+                await asyncio.gather(*shutdown_tasks, return_exceptions=True)
+            except Exception as e:
+                logger.error(f"Error during async shutdown tasks: {e}")
+        
+        # Close database connection last
+        try:
+            close_db()
+        except Exception as e:
+            logger.error(f"Error closing database: {e}")
 
 # Update FastAPI instance to use lifespan
 app = FastAPI(lifespan=lifespan)
@@ -240,37 +252,32 @@ async def get_responses(request: CompletionRequest, token: str):
     if not token:
         raise HTTPException(status_code=400, detail="Token is required")
 
-    model_lower = request.model.lower()
-    if model_lower in app.state.bot_names_map:
-        request.model = app.state.bot_names_map[model_lower]
-        message = [
-            ProtocolMessage(role=msg.role if msg.role in [
-                            "user", "system"] else "bot", content=msg.content)
-            for msg in request.messages
-        ]
-        additional_params = {
-            "temperature": request.temperature,
-            "skip_system_prompt": request.skip_system_prompt if request.skip_system_prompt is not None else False,
-            "logit_bias": request.logit_bias if request.logit_bias is not None else {},
-            "stop_sequences": request.stop_sequences if request.stop_sequences is not None else []
-        }
-        query = QueryRequest(
-            query=message,
-            user_id="",
-            conversation_id="",
-            message_id="",
-            version="1.0",
-            type="query",
-            **additional_params
-        )
-        try:
-            return await get_final_response(query, bot_name=request.model, api_key=token, session=app.state.proxy)
-        except Exception as e:
-            logger.error(f"Error in get_final_response: {str(e)}")
-            raise HTTPException(status_code=500, detail=str(e))
-    else:
-        raise HTTPException(
-            status_code=400, detail=f"Model {request.model} is not supported")
+    message = [
+        ProtocolMessage(role=msg.role if msg.role in [
+                        "user", "system"] else "bot", content=msg.content)
+        for msg in request.messages
+    ]
+    additional_params = {
+        "temperature": request.temperature,
+        "skip_system_prompt": request.skip_system_prompt if request.skip_system_prompt is not None else False,
+        "logit_bias": request.logit_bias if request.logit_bias is not None else {},
+        "stop_sequences": request.stop_sequences if request.stop_sequences is not None else []
+    }
+    query = QueryRequest(
+        query=message,
+        user_id="",
+        conversation_id="",
+        message_id="",
+        version="1.0",
+        type="query",
+        **additional_params
+    )
+    try:
+        return await get_final_response(query, bot_name=request.model, api_key=token, session=app.state.proxy)
+    except Exception as e:
+        logger.error(f"Error in get_final_response: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+  
 
 
 async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
@@ -338,8 +345,9 @@ async def create_completion(request: CompletionRequest, token: str = Depends(ver
 
         model_lower = request.model.lower()
         if model_lower not in app.state.bot_names_map:
-            raise HTTPException(
-                status_code=400, detail=f"Model {request.model} not found")
+            logger.warning(f"user {username} requested {model_lower} which is not in the available models")
+            # raise HTTPException(
+            #     status_code=400, detail=f"Model {request.model} not found")
 
         request.model = app.state.bot_names_map[model_lower]
 
@@ -470,6 +478,14 @@ async def create_completion(request: CompletionRequest, token: str = Depends(ver
     except GeneratorExit:
         logger.info(
             f"GeneratorExit exception caught for request [{request_id}]")
+    except HTTPException as he:
+        logger.error(
+            f"HTTPException for request [{request_id}]: {str(he.detail)}")
+        raise he
+    except BotError as be:
+        error_msg = f"BotError during response for request [{request_id}]: {str(be)}"
+        logger.error(error_msg)
+        raise HTTPException(status_code=500, detail=str(be))
     except Exception as e:
         error_msg = f"Error during response for request [{request_id}]: {str(e)}"
         logger.error(error_msg)
