@@ -737,30 +737,4 @@ function filterAndSortData() {
     renderUsers(filteredUsers);
 }
 
-// Update pagination event listeners
-document.addEventListener('DOMContentLoaded', () => {
-    // ...existing code...
 
-    // Add pagination events
-    const prevButton = document.getElementById('prevPage');
-    const nextButton = document.getElementById('nextPage');
-
-    if (prevButton) {
-        prevButton.addEventListener('click', () => {
-            if (currentPage > 1) {
-                currentPage--;
-                filterAndSortData();
-            }
-        });
-    }
-
-    if (nextButton) {
-        nextButton.addEventListener('click', () => {
-            const totalPages = Math.ceil(originalUsers.length / itemsPerPage);
-            if (currentPage < totalPages) {
-                currentPage++;
-                filterAndSortData();
-            }
-        });
-    }
-});
