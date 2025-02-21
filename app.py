@@ -20,7 +20,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from fastapi_poe.types import ProtocolMessage
 from fastapi_poe.client import get_bot_response, get_final_response, QueryRequest, BotError
 # Import the database functions
-from database import init_db, close_db, get_user
+from database import init_db, close_db, get_user, update_last_used
 from auth.auth import is_admin_user
 from config import config
 import secrets
@@ -322,11 +322,11 @@ async def create_completion(request: CompletionRequest, token: str = Depends(ver
     try:
         # Retrieve username from the database
         username = None
-        db_user = get_user(api_key=token)  # No need to pass db
+        db_user = get_user(api_key=token)
         if db_user:
-            username = db_user[2]  # Assuming username is the third column
-            logger.debug(
-                f"Found username {username} for API key {token[:10]}...")
+            username = db_user[2]
+            # Update last used timestamp
+            update_last_used(token)
         elif token in app.state.access_tokens:
             username = "access_token_user"
 
@@ -346,8 +346,8 @@ async def create_completion(request: CompletionRequest, token: str = Depends(ver
         model_lower = request.model.lower()
         if model_lower not in app.state.bot_names_map:
             logger.warning(f"user {username} requested {model_lower} which is not in the available models")
-            # raise HTTPException(
-            #     status_code=400, detail=f"Model {request.model} not found")
+            raise HTTPException(
+                status_code=400, detail=f"Model {request.model} is not available")
 
         request.model = app.state.bot_names_map[model_lower]
 

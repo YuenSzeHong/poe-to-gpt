@@ -264,3 +264,19 @@ def update_linuxdo_token(cur, user_id: int, linuxdo_token: str) -> bool:
     except psycopg2.Error as e:
         logger.error(f"Error updating linuxdo_token: {e}")
         return False
+
+def update_last_used(api_key: str) -> bool:
+    """Update the last_used timestamp for a user"""
+    try:
+        conn = get_db()
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE users 
+                SET last_used = CURRENT_TIMESTAMP 
+                WHERE api_key = %s
+            """, (api_key,))
+            conn.commit()
+            return True
+    except Exception as e:
+        logger.error(f"Error updating last_used: {e}")
+        return False

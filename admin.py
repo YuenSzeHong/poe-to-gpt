@@ -1,3 +1,4 @@
+from datetime import timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from database import (get_user, get_db, reset_api_key,
                       disable_user, enable_user)
@@ -137,8 +138,8 @@ async def list_users(
             "enabled": user[4],
             "disable_reason": user[5],
             "is_admin": user[8],
-            "created_at": user[6],
-            "last_used_at": user[7]
+            "created_at": user[6].astimezone(timezone(timedelta(hours=8))).isoformat() if user[6] else None,
+            "last_used_at": user[7].astimezone(timezone(timedelta(hours=8))).isoformat() if user[7] else None
         } for user in users]
 
         return {"users": user_list}
