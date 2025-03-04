@@ -58,6 +58,15 @@ vim config.toml
 docker-compose up -d
 ```
 
+### Configuring Real IP with Reverse Proxy
+If you're running this service in a Docker container and accessing it through a reverse proxy (like Nginx), logs will show the Docker bridge IP (172.17.0.1) instead of actual client IPs by default.
+
+To show real client IPs in the logs, ensure your reverse proxy forwards the following headers:
+- X-Forwarded-For
+- X-Real-IP
+
+These headers are enabled by default. The service is configured to trust headers from localhost (127.0.0.1) and the Docker bridge network (172.17.0.1).
+
 ### Usage
 
 Please refer to [OpenAI documentation](https://platform.openai.com/docs/api-reference/chat/create) for more details on how to use the ChatGPT API.

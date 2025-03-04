@@ -50,6 +50,15 @@ vim config.toml
 docker-compose up -d
 ```
 
+### 配置反向代理真实 IP
+如果您在 Docker 容器中运行此服务并通过反向代理（如 Nginx）访问，默认情况下日志会显示 Docker 网桥 IP（172.17.0.1）而不是实际客户端 IP。
+
+要在日志中显示真实客户端 IP，请确保您的反向代理正确转发以下头信息：
+- X-Forwarded-For
+- X-Real-IP
+
+这些头信息在默认配置中已启用。服务配置为信任来自本地主机（127.0.0.1）和 Docker 桥接网络（172.17.0.1）的请求头。
+
 ### 使用
 
 请查看 [OpenAI 文档](https://platform.openai.com/docs/api-reference/chat/create) 以获取有关如何使用 ChatGPT API 的更多详细信息。
